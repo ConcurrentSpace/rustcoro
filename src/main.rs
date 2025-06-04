@@ -1,4 +1,11 @@
-use std::arch::asm;
+use std::arch::global_asm;
+
+global_asm!(
+    ".option prefix", // 用于控制符号名称的前缀处理, 在某些平台上（特别是 RISC-V），符号名可能需要特定前缀
+    ".option norelax", // 禁用汇编器的重定位优化, 特别在 RISC-V 架构中很重要
+    include_str!("switch.S"),
+    options(att_syntax) // 这里你可以修改为 intel | at&t 语法
+);
 
 const STACK_SIZE: isize = 48;
 
@@ -17,21 +24,8 @@ fn hello() -> ! {
     loop {}
 }
 
-// 保存当前协程的上下文(此代码中未实现)
-// 加载目标协程的栈指针(`rsp`)
-// 通过`ret`指令跳转到目标协程上次暂停的位置
-// 将指针`new_ctx`指向的内存地址加载到栈指针寄存器(rsp)
-// 将`new_ctx`指针值放入通用寄存器作为汇编块的输入
-// in - 这是一个输入操作数说明符，表示将一个 Rust 变量传入汇编代码
-fn gt_switch(new_ctx: *const ThreadContext) {
-    unsafe {
-        asm!(
-            "mov rsp, [{0} + 0x00]", // 偏移为 0
-            "ret",
-            // 将 Rust 变量 new_ctx 的值放入一个由编译器选择的寄存器中使其可以在接下来的汇编代码中使
-            in(reg) new_ctx
-        );
-    }
+unsafe extern "C" {
+    fn gt_switch(new_ctx: *const ThreadContext);
 }
 
 // `&mut T`可以隐式转换为`*const T`(不可变原始指针)
