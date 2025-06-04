@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const STACK_SIZE: usize = 1024;
+const STACK_SIZE: usize = 1024; // todo: - use print make it bigger than 48
 
 const ThreadContext = struct {
     rsp: u64,
