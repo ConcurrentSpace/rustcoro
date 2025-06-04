@@ -1,3 +1,4 @@
+.globl gt_switch
 .global gt_switch
 .section .text
 
