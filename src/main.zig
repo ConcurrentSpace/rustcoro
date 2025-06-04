@@ -1,13 +1,15 @@
 const std = @import("std");
 
-const STACK_SIZE: usize = 48;
+const STACK_SIZE: usize = 1024;
 
 const ThreadContext = struct {
     rsp: u64,
 };
 
 fn hello() noreturn { // todo: - why can't use callconv(.C)
-    std.debug.print("hello wake up on a new stack\n", .{}); // todo: - this place use to much stack
+    // std.debug.print("hello wake up on a new stack\n", .{}); // todo: - this place use to much stack
+    const stdout = std.io.getStdOut().writer();
+    stdout.writeAll("hello wake up on a new stack\n") catch unreachable;
     while (true) {}
 }
 
@@ -25,6 +27,11 @@ pub fn main() !void {
 
     const stack = try std.heap.page_allocator.alignedAlloc(u8, 16, STACK_SIZE);
     defer std.heap.page_allocator.free(stack);
+
+    std.debug.print("Stack info:\n", .{});
+    std.debug.print("Total size: {d}\n", .{STACK_SIZE});
+    std.debug.print("Alignment: {d}\n", .{@alignOf(@TypeOf(stack))});
+    std.debug.print("Base address: 0x{x}\n", .{@intFromPtr(stack.ptr)});
 
     // 1. 获取栈底位置
     const stack_bottom = @intFromPtr(stack.ptr) + STACK_SIZE;
