@@ -1,8 +1,8 @@
 use std::arch::global_asm;
 
+// .option prefix 用于控制符号名称的前缀处理, 在某些平台上（特别是 RISC-V），符号名可能需要特定前缀
+// .option norelax 禁用汇编器的重定位优化, 特别在 RISC-V 架构中很重要
 global_asm!(
-    ".option prefix", // 用于控制符号名称的前缀处理, 在某些平台上（特别是 RISC-V），符号名可能需要特定前缀
-    ".option norelax", // 禁用汇编器的重定位优化, 特别在 RISC-V 架构中很重要
     include_str!("switch.S"),
     options(att_syntax) // 这里你可以修改为 intel | at&t 语法
 );
