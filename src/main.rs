@@ -1,3 +1,5 @@
+// https://zhuanlan.zhihu.com/p/101061389
+
 use std::arch::global_asm;
 
 // .option prefix 用于控制符号名称的前缀处理, 在某些平台上（特别是 RISC-V），符号名可能需要特定前缀
