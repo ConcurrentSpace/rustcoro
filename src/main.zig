@@ -13,7 +13,7 @@ fn hello() noreturn { // todo: - why can't use callconv(.C)
     while (true) {}
 }
 
-extern fn gt_switch(new_ctx: *const ThreadContext) void;
+extern fn gt_switch(new_ctx: *const ThreadContext) void; // todo: - try use naked
 comptime {
     asm (@embedFile("switch.S"));
 }
