@@ -53,7 +53,9 @@ fn main() {
         ctx.rsp = sb_aligned.offset(-16) as u64; 
 
         for i in 0..STACK_SIZE {
-            println!("mem: {}, val: {}", sb_aligned.offset(-i as isize) as usize, *sb_aligned.offset(-i as isize));
+            println!("mem: {}, val: {}", 
+                sb_aligned.offset(-i as isize) as usize, 
+                *sb_aligned.offset(-i as isize));
         }
 
         gt_switch(&mut ctx)

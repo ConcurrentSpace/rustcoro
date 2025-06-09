@@ -35,3 +35,8 @@ text
 
 如果使用 global_asm!：优先使用 Intel 语法
 如果使用 build.rs：两种语法都可以，但要保持一致
+
+## refs
+
+- https://zhuanlan.zhihu.com/p/101061389
+
