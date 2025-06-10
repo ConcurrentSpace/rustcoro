@@ -2,7 +2,7 @@ use std::arch::global_asm;
 
 // options(att_syntax) // 这里你可以修改为 raw | att_syntax 语法
 // options(raw)
-global_asm!(include_str!("switch.s"));
+global_asm!(include_str!("switch.s"), options(att_syntax));
 
 const DEFAULT_STACK_SIZE: usize = 1024 * 1024 * 2;
 const MAX_THREADS: usize = 4;
@@ -60,7 +60,7 @@ impl Runtime {
         let mut avaliable_threads: Vec<Thread> = (1..MAX_THREADS).map(|_| Thread::new()).collect();
         threads.append(&mut avaliable_threads);
 
-        println!("total threads len = {}", threads.len());
+        // println!("total threads len = {}", threads.len());
 
         Runtime {
             threads: threads,
@@ -92,7 +92,7 @@ impl Runtime {
     fn t_yield(&mut self) -> bool {
         let mut pos = self.current;
 
-        println!("current = {}", self.current);
+        // println!("current = {}", self.current);
 
         // for i in 0..self.threads.len() {
         //     let thread = &self.threads[i];
@@ -152,9 +152,9 @@ impl Runtime {
             available_thread.ctx.rsp = s_aligned.offset(-16) as u64;
 
             // println!("Thread {} stack setup:", self.threads.len());
-            println!("  Function at: {:p}", f as *const ());
-            println!("  Guard at: {:p}", guard as *const ());
-            println!("  RSP set to: {:p}", s_ptr.offset(-16));
+            // println!("  Function at: {:p}", f as *const ());
+            // println!("  Guard at: {:p}", guard as *const ());
+            // println!("  RSP set to: {:p}", s_ptr.offset(-16));
         }
 
         available_thread.state = State::Ready;
@@ -178,6 +178,34 @@ fn yield_thread() {
 unsafe extern "C" {
     unsafe fn switch(old_ctx: *mut ThreadContext, new_ctx: *const ThreadContext);
 }
+
+// 不使用这种方式，rust 函数会对汇编做处理
+// 可能被优化掉或编译器插入清理逻辑（epilogue）
+// #[naked]
+// #[inline(never)]
+// unsafe fn no_use_switch(old_ctx: *mut ThreadContext, new_ctx: *const ThreadContext) {
+//     unsafe {
+//         asm!(
+//             "mov [rdi + 0x00], rsp",
+//             "mov [rdi + 0x08], r15",
+//             "mov [rdi + 0x10], r14",
+//             "mov [rdi + 0x18], r13",
+//             "mov [rdi + 0x20], r12",
+//             "mov [rdi + 0x28], rbx",
+//             "mov [rdi + 0x30], rbp",
+//             "mov rsp, [rsi + 0x00]",
+//             "mov r15, [rsi + 0x08]",
+//             "mov r14, [rsi + 0x10]",
+//             "mov r13, [rsi + 0x18]",
+//             "mov r12, [rsi + 0x20]",
+//             "mov rbx, [rsi + 0x28]",
+//             "mov rbp, [rsi + 0x30]",
+//             "ret",
+//             in("rdi") old_ctx,
+//             in("rsi") new_ctx
+//         );
+//     }
+// }
 
 fn main() {
     println!("runtime run.");
