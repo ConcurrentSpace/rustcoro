@@ -1,8 +1,5 @@
 use std::arch::global_asm;
 
-// todo: - change it use suspend resume
-// todo: - 不采用对称的方案
-
 // options(att_syntax) // 这里你可以修改为 raw | att_syntax 语法
 // options(raw)
 global_asm!(include_str!("switch.s"), options(att_syntax));
