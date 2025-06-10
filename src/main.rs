@@ -24,7 +24,7 @@ struct ThreadContext {
 enum State {
     Available, // 表示线程可用，并且可以根据需要分配任务
     Running,   // 意味着线程正在运行
-    Ready,     // 意味着线程已准备好继续前进和恢复执行
+    Ready,     // 意味着线程已准备好继续前进和恢复执行，已经调度过了等待恢复
 }
 
 struct Thread {
@@ -76,11 +76,15 @@ impl Runtime {
     }
 
     fn run(&mut self) {
-        while self.t_yield() {}
+        let mut can_next = true;
+        while can_next {
+            can_next = self.t_yield(); // thread 1 | thread 2 执行一遍就返回 base_thread 执行 yield 回来
+        }
         println!("while finished");
         std::process::exit(0);
     }
 
+    // 栈结束时候，重置可用状态
     fn t_return(&mut self) {
         if self.current != 0 {
             self.threads[self.current].state = State::Available; // 当前线程需要重新分配任务
@@ -92,12 +96,12 @@ impl Runtime {
     fn t_yield(&mut self) -> bool {
         let mut pos = self.current;
 
-        // println!("current = {}", self.current);
-
-        // for i in 0..self.threads.len() {
-        //     let thread = &self.threads[i];
-        //     println!("the thread at index = {}, state = {:?}", i, thread.state);
-        // }
+        println!("current = {}", self.current);
+        for i in 0..self.threads.len() {
+            let thread = &self.threads[i];
+            println!("the thread at index = {}, state = {:?}", i, thread.state);
+        }
+        println!("");
 
         // 找到 ready 的 thread
         while self.threads[pos].state != State::Ready {
