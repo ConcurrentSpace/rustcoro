@@ -1,4 +1,3 @@
-#![feature(naked_functions)]
 use std::arch::{asm};
 
 const DEFAULT_STACK_SIZE: usize = 1024 * 1024 * 2;
@@ -40,6 +39,11 @@ impl Thread {
     }
 }
 
+pub struct Runtime {
+    threads: Vec<Thread>,
+    current: usize,
+}
+
 impl Runtime {
     fn new() -> Self {
         let base_thread = Thread {
@@ -67,6 +71,7 @@ impl Runtime {
 
     fn run(&mut self) {
         while self.t_yield() { }
+        println!("while finished");
         std::process::exit(0);
     }
 
@@ -77,6 +82,7 @@ impl Runtime {
         }
     }
 
+    #[inline(never)]
     fn t_yield(&mut self) -> bool {
         let mut pos = self.current;
 
@@ -101,29 +107,32 @@ impl Runtime {
         unsafe {
             let old: *mut ThreadContext = &mut self.threads[old_pos].ctx;
             let new: *const ThreadContext = &self.threads[pos].ctx;
-            asm!("call switch", in("rdi") old, in("rsi") new, clobber_abi("C")); // call switch
+            // asm!("call switch", in("rdi") old, in("rsi") new, clobber_abi("C")); // call switch
+            switch(old, new);
         }
 
         self.threads.len() > 0
     }
 
     fn spawn(&mut self, f: fn()) {
-        let available_thread = self
+        let available = self
             .threads
             .iter_mut()
             .find(|t| t.state == State::Available)
             .expect("no available thread.");
 
-        let size = available_thread.stack.len();
+        let size = available.stack.len();
 
         unsafe {
-            let s_ptr = available_thread.stack.as_mut_ptr().offset(size as isize);
+            let s_ptr = available.stack.as_mut_ptr().offset(size as isize);
             let s_ptr = (s_ptr as usize & !15) as *mut u8;
             std::ptr::write(s_ptr.offset(-16) as *mut u64, guard as u64);
             std::ptr::write(s_ptr.offset(-14) as *mut u64, skip as u64);
             std::ptr::write(s_ptr.offset(-32) as *mut u64, f as u64);
-            available_thread.ctx.rsp = s_ptr.offset(-32) as u64;
+            available.ctx.rsp = s_ptr.offset(-32) as u64;
         }
+
+        available.state = State::Ready;
     }
 }
 
@@ -147,8 +156,7 @@ fn yield_thread() {
     }
 }
 
-#[inline(never)]
-unsafe extern "C" fn switch() {
+unsafe fn switch(old_ctx: *mut ThreadContext, new_ctx: *const ThreadContext) {
     unsafe  {
         asm!(
             "mov [rdi + 0x00], rsp",
@@ -165,30 +173,38 @@ unsafe extern "C" fn switch() {
             "mov r12, [rsi + 0x20]",
             "mov rbx, [rsi + 0x28]",
             "mov rbp, [rsi + 0x30]",
-            "ret"
+            "ret",
+            in("rdi") old_ctx,
+            in("rsi") new_ctx
         );
     }
 }
 
-pub struct Runtime {
-    threads: Vec<Thread>,
-    current: usize,
-}
-
-pub fn run() {
-   
-}
+// todo: - add save format
 
 fn main() {
+    println!("runtime run.");
     let mut runtime = Runtime::new();
     runtime.init();
 
     runtime.spawn(|| {
-        yield_thread();
+        println!("thread 1 starting");
+        let id = 1;
+        for i in 0..10 {
+            println!("thread: {} counter: {}", id, i);
+            yield_thread();
+        }
+        println!("thread 1 finished");
     });
 
     runtime.spawn(|| {
-        yield_thread();
+        println!("thread 2 starting");
+        let id = 2;
+        for i in 0..15 {
+            println!("thread: {} counter: {}", id, i);
+            yield_thread();
+        }
+        println!("thread 2 finished");
     });
 
     runtime.run();
