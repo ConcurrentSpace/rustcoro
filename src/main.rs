@@ -1,7 +1,7 @@
 #![feature(naked_functions)]
-use std::arch::{asm, naked_asm};
+use std::arch::{asm};
 
-const DEFAULT_STACK_SIZE = 1024 * 1024 * 2;
+const DEFAULT_STACK_SIZE: usize = 1024 * 1024 * 2;
 const MAX_THREADS: usize = 4;
 static mut RUNTIME: usize = 0;
 
@@ -66,9 +66,7 @@ impl Runtime {
     }
 
     fn run(&mut self) {
-        while self.t_yield() {
-
-        }
+        while self.t_yield() { }
         std::process::exit(0);
     }
 
@@ -136,9 +134,10 @@ fn guard() {
     }
 }
 
-#[naked]
-unsafe extern "C" fn skip() {
-    naked_asm!("ret")
+extern "C" fn skip() {
+    unsafe  {
+        asm!("ret")
+    }
 }
 
 fn yield_thread() {
@@ -148,26 +147,27 @@ fn yield_thread() {
     }
 }
 
-#[naked]
-#[no_mangle]
+#[inline(never)]
 unsafe extern "C" fn switch() {
-    naked_asm!(
-        "mov [rdi + 0x00], rsp",
-        "mov [rdi + 0x08], r15",
-        "mov [rdi + 0x10], r14",
-        "mov [rdi + 0x18], r13",
-        "mov [rdi + 0x20], r12",
-        "mov [rdi + 0x28], rbx",
-        "mov [rdi + 0x30], rbp",
-        "mov rsp, [rsi + 0x00]",
-        "mov r15, [rsi + 0x08]",
-        "mov r14, [rsi + 0x10]",
-        "mov r13, [rsi + 0x18]",
-        "mov r12, [rsi + 0x20]",
-        "mov rbx, [rsi + 0x28]",
-        "mov rbp, [rsi + 0x30]",
-        "ret"
-    );
+    unsafe  {
+        asm!(
+            "mov [rdi + 0x00], rsp",
+            "mov [rdi + 0x08], r15",
+            "mov [rdi + 0x10], r14",
+            "mov [rdi + 0x18], r13",
+            "mov [rdi + 0x20], r12",
+            "mov [rdi + 0x28], rbx",
+            "mov [rdi + 0x30], rbp",
+            "mov rsp, [rsi + 0x00]",
+            "mov r15, [rsi + 0x08]",
+            "mov r14, [rsi + 0x10]",
+            "mov r13, [rsi + 0x18]",
+            "mov r12, [rsi + 0x20]",
+            "mov rbx, [rsi + 0x28]",
+            "mov rbp, [rsi + 0x30]",
+            "ret"
+        );
+    }
 }
 
 pub struct Runtime {
