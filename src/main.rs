@@ -83,7 +83,7 @@ impl Runtime {
 
     fn t_return(&mut self) {
         if self.current != 0 {
-            self.threads[self.current].state = State::Available;
+            self.threads[self.current].state = State::Available; // 当前线程需要重新分配任务
             self.t_yield();
         }
     }
