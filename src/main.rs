@@ -1,48 +1,15 @@
-use std::arch::global_asm;
-use std::io::Write;
+#![feature(naked_functions)]
+use std::arch::{asm, naked_asm};
 
-mod fiber;
+const DEFAULT_STACK_SIZE = 1024 * 1024 * 2;
+const MAX_THREADS: usize = 4;
+static mut RUNTIME: usize = 0;
 
-// todo: fix home codelldb not install -> debug problem
-
-// .option prefix 用于控制符号名称的前缀处理, 在某些平台上（特别是 RISC-V），符号名可能需要特定前缀
-// .option norelax 禁用汇编器的重定位优化, 特别在 RISC-V 架构中很重要
-global_asm!(
-    include_str!("switch.S"),
-    options(att_syntax) // 这里你可以修改为 intel | at&t 语法
-);
-
-const STACK_SIZE: isize = 1024;
-static mut S_PTR: *const u8 = 0 as *const u8;
-
-fn print_stack(filename: &str) {
-    let mut file = std::fs::File::create(filename).unwrap();
-    unsafe {
-        for i in (0..STACK_SIZE).rev() {
-            // println!("index = {}", i);
-            writeln!(
-                file,
-                "{i}: mem: {}, value: {}",
-                S_PTR.offset(i as isize) as usize,
-                *S_PTR.offset(i as isize)
-            )
-            .expect("error writing to file.");
-        }
-    }
-}
-
-// #[repr(C)]
-// 指定结构体使用C语言的内存布局
-// 这是必要的，因为该结构体可能会在Rust和汇编代码之间传递
-// 保证字段顺序和内存对齐符合预期
-// todo: - 查找调用约定
 #[derive(Debug, Default)]
-// 不会直接造成 unsafe，也就是说使用结构体不会使用 unsafe，直接规定一种内存布局形式，但是用指针地址给寄存器赋值的时候必然会造成 unsafe
-// todo: - 打印内存布局，显示差异
 #[repr(C)]
 struct ThreadContext {
     rsp: u64,
-    r15: u64,
+    r15: u64,    
     r14: u64,
     r13: u64,
     r12: u64,
@@ -50,52 +17,179 @@ struct ThreadContext {
     rbp: u64,
 }
 
-fn hello() -> ! {
-    // println!("hello wake up on a new stack");
-    print_stack("after.txt"); // 切换到 hello() 后的栈状态
-
-    loop {}
+#[derive(PartialEq, Eq, Debug)]
+enum State {
+    Available,
+    Running,
+    Ready,
 }
 
-unsafe extern "C" {
-    fn gt_switch(new_ctx: *const ThreadContext);
+struct Thread {
+    stack: Vec<u8>,
+    ctx: ThreadContext,
+    state: State,
 }
 
-// `&mut T`可以隐式转换为`*const T`(不可变原始指针)
-// Rust允许可变引用到不可变指针的自动转换
-// 这种转换是安全的，因为不会通过不可变指针修改数据
-fn main() {
-    let mut ctx = ThreadContext::default();
-    let mut stack = vec![0_u8; STACK_SIZE as usize];
-    let stack_ptr = stack.as_mut_ptr();
+impl Thread {
+    fn new() -> Self {
+        Thread {
+            stack: vec![0_u8; DEFAULT_STACK_SIZE],
+            ctx: ThreadContext::default(),
+            state: State::Available,
+        }
+    }
+}
 
-    // 为什么不用像之前那样 16 字节对齐
-    // 虽然STACK_SIZE - 16可能不是16的倍数
-    // 但现代CPU对mov指令通常有较好的非对齐访问支持
-    // 作为学习示例可以工作，但生产代码应该保持对齐
+impl Runtime {
+    fn new() -> Self {
+        let base_thread = Thread {
+            stack: vec![0_u8; DEFAULT_STACK_SIZE],
+            ctx: ThreadContext::default(),
+            state: State::Running,
+        };
+
+        let mut threads = vec![base_thread];
+        let mut avaliable_threads: Vec<Thread> = (1..MAX_THREADS).map(|_| Thread::new()).collect();
+        threads.append(&mut avaliable_threads);
+
+        Runtime { 
+            threads: threads, 
+            current: 0,
+        }
+    }
+
+    fn init(&self) {
+        unsafe {
+            let r_ptr: *const Runtime = self;
+            RUNTIME = r_ptr as usize;
+        }
+    }
+
+    fn run(&mut self) {
+        while self.t_yield() {
+
+        }
+        std::process::exit(0);
+    }
+
+    fn t_return(&mut self) {
+        if self.current != 0 {
+            self.threads[self.current].state = State::Available;
+            self.t_yield();
+        }
+    }
+
+    fn t_yield(&mut self) -> bool {
+        let mut pos = self.current;
+
+        while self.threads[pos].state != State::Ready {
+            pos += 1;
+            if pos == self.threads.len() {
+                pos = 0;
+            }
+            if pos == self.current {
+                return false;
+            }
+        }
+
+        if self.threads[self.current].state != State::Available {
+            self.threads[self.current].state = State::Ready;
+        }
+
+        self.threads[pos].state = State::Running;
+        let old_pos = self.current;
+        self.current = pos;
+
+        unsafe {
+            let old: *mut ThreadContext = &mut self.threads[old_pos].ctx;
+            let new: *const ThreadContext = &self.threads[pos].ctx;
+            asm!("call switch", in("rdi") old, in("rsi") new, clobber_abi("C")); // call switch
+        }
+
+        self.threads.len() > 0
+    }
+
+    fn spawn(&mut self, f: fn()) {
+        let available_thread = self
+            .threads
+            .iter_mut()
+            .find(|t| t.state == State::Available)
+            .expect("no available thread.");
+
+        let size = available_thread.stack.len();
+
+        unsafe {
+            let s_ptr = available_thread.stack.as_mut_ptr().offset(size as isize);
+            let s_ptr = (s_ptr as usize & !15) as *mut u8;
+            std::ptr::write(s_ptr.offset(-16) as *mut u64, guard as u64);
+            std::ptr::write(s_ptr.offset(-14) as *mut u64, skip as u64);
+            std::ptr::write(s_ptr.offset(-32) as *mut u64, f as u64);
+            available_thread.ctx.rsp = s_ptr.offset(-32) as u64;
+        }
+    }
+}
+
+fn guard() {
     unsafe {
-        S_PTR = stack_ptr;
-        std::ptr::write(stack_ptr.offset(STACK_SIZE - 16) as *mut u64, hello as u64);
-        print_stack("before.txt"); // 打印 main() 函数设置的初始栈状态
-        ctx.rsp = stack_ptr.offset(STACK_SIZE - 16) as u64;
-        println!("rsp = {}", ctx.rsp);
-        gt_switch(&mut ctx) // todo: - jump where
-    };
-
-    fiber::run();
+        let rt_ptr = RUNTIME as *mut Runtime;
+        (*rt_ptr).t_return();
+    }
 }
 
-// pub fn main() {
-//     let mut ctx = ThreadContext::default();
-//     let mut stack = vec![0_u8; STACK_SIZE as usize];
-//     let stack_ptr = stack.as_mut_ptr();
-//     unsafe {
-//         let stack_bottom = stack.as_mut_ptr().offset(STACK_SIZE);
-//         let sb_aligned = (stack_bottom as usize & !15) as *mut u8;
-//         S_PTR = sb_aligned;
-//         std::ptr::write(stack_ptr.offset(STACK_SIZE - 16) as *mut u64, hello as u64);
-//         print_stack("before.txt");
-//         ctx.rsp = stack_ptr.offset(STACK_SIZE - 16) as u64;
-//         gt_switch(&mut ctx);
-//     }
-// }
+#[naked]
+unsafe extern "C" fn skip() {
+    naked_asm!("ret")
+}
+
+fn yield_thread() {
+    unsafe {
+        let rt_ptr = RUNTIME as *mut Runtime;
+        (*rt_ptr).t_yield();
+    }
+}
+
+#[naked]
+#[no_mangle]
+unsafe extern "C" fn switch() {
+    naked_asm!(
+        "mov [rdi + 0x00], rsp",
+        "mov [rdi + 0x08], r15",
+        "mov [rdi + 0x10], r14",
+        "mov [rdi + 0x18], r13",
+        "mov [rdi + 0x20], r12",
+        "mov [rdi + 0x28], rbx",
+        "mov [rdi + 0x30], rbp",
+        "mov rsp, [rsi + 0x00]",
+        "mov r15, [rsi + 0x08]",
+        "mov r14, [rsi + 0x10]",
+        "mov r13, [rsi + 0x18]",
+        "mov r12, [rsi + 0x20]",
+        "mov rbx, [rsi + 0x28]",
+        "mov rbp, [rsi + 0x30]",
+        "ret"
+    );
+}
+
+pub struct Runtime {
+    threads: Vec<Thread>,
+    current: usize,
+}
+
+pub fn run() {
+   
+}
+
+fn main() {
+    let mut runtime = Runtime::new();
+    runtime.init();
+
+    runtime.spawn(|| {
+        yield_thread();
+    });
+
+    runtime.spawn(|| {
+        yield_thread();
+    });
+
+    runtime.run();
+}
