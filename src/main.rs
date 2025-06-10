@@ -21,6 +21,7 @@ struct ThreadContext {
     r12: u64,
     rbx: u64,
     rbp: u64,
+    caller: usize, // 调用者线程ID
 }
 
 #[derive(PartialEq, Eq, Debug)]
@@ -44,6 +45,16 @@ impl Thread {
             state: State::Available,
         }
     }
+
+    fn new_with_caller(caller: usize) -> Self {
+        let mut ctx = ThreadContext::default();
+        ctx.caller = caller;
+        Thread {
+            stack: vec![0_u8; DEFAULT_STACK_SIZE],
+            ctx,
+            state: State::Available,
+        }
+    }
 }
 
 pub struct Runtime {
@@ -53,14 +64,17 @@ pub struct Runtime {
 
 impl Runtime {
     fn new() -> Self {
-        let base_thread = Thread {
+        let mut base_thread = Thread {
             stack: vec![0_u8; DEFAULT_STACK_SIZE],
             ctx: ThreadContext::default(),
             state: State::Running,
         };
+        base_thread.ctx.caller = 0; // 主线程的caller指向自己
 
         let mut threads = vec![base_thread];
-        let mut avaliable_threads: Vec<Thread> = (1..MAX_THREADS).map(|_| Thread::new()).collect();
+        let mut avaliable_threads: Vec<Thread> = (1..MAX_THREADS)
+            .map(|_| Thread::new_with_caller(0))
+            .collect();
         threads.append(&mut avaliable_threads);
 
         // println!("total threads len = {}", threads.len());
@@ -96,6 +110,7 @@ impl Runtime {
     }
 
     #[inline(never)]
+    // 对称yield - 切换到任意ready线程
     fn t_yield(&mut self) -> bool {
         let mut pos = self.current;
 
@@ -134,6 +149,64 @@ impl Runtime {
         }
 
         self.threads.len() > 0
+    }
+
+    // 非对称yield - 只能切换回调用者
+    fn t_yield_to_caller(&mut self) -> bool {
+        let caller = self.threads[self.current].ctx.caller;
+        if caller == self.current {
+            return false; // 不能切换回自己
+        }
+
+        if self.threads[caller].state != State::Ready {
+            return false;
+        }
+
+        // 更新当前线程状态
+        if self.threads[self.current].state != State::Available {
+            self.threads[self.current].state = State::Ready;
+        }
+
+        self.threads[caller].state = State::Running;
+        let old_pos = self.current;
+        self.current = caller;
+
+        let old: *mut ThreadContext = &mut self.threads[old_pos].ctx;
+        let new: *const ThreadContext = &self.threads[caller].ctx;
+
+        unsafe {
+            switch(old, new);
+        }
+
+        true
+    }
+
+    // 调用另一个协程
+    fn t_call(&mut self, callee: usize) -> bool {
+        if callee >= self.threads.len() || self.threads[callee].state != State::Ready {
+            return false;
+        }
+
+        // 设置被调用者的caller为当前线程
+        self.threads[callee].ctx.caller = self.current;
+
+        // 更新当前线程状态
+        if self.threads[self.current].state != State::Available {
+            self.threads[self.current].state = State::Ready;
+        }
+
+        self.threads[callee].state = State::Running;
+        let old_pos = self.current;
+        self.current = callee;
+
+        let old: *mut ThreadContext = &mut self.threads[old_pos].ctx;
+        let new: *const ThreadContext = &self.threads[callee].ctx;
+
+        unsafe {
+            switch(old, new);
+        }
+
+        true
     }
 
     fn spawn(&mut self, f: fn()) {
@@ -182,6 +255,20 @@ fn yield_thread() {
     }
 }
 
+fn yield_to_caller() {
+    unsafe {
+        let rt_ptr = RUNTIME as *mut Runtime;
+        (*rt_ptr).t_yield_to_caller();
+    }
+}
+
+fn call_thread(callee: usize) -> bool {
+    unsafe {
+        let rt_ptr = RUNTIME as *mut Runtime;
+        (*rt_ptr).t_call(callee)
+    }
+}
+
 unsafe extern "C" {
     unsafe fn switch(old_ctx: *mut ThreadContext, new_ctx: *const ThreadContext);
 }
@@ -219,6 +306,7 @@ fn main() {
     let mut runtime = Runtime::new();
     runtime.init();
 
+    // 原有对称yield测试
     runtime.spawn(|| {
         println!("thread 1 starting");
         let id = 1;
@@ -237,6 +325,32 @@ fn main() {
             yield_thread();
         }
         println!("thread 2 finished");
+    });
+
+    // 新增非对称协程测试
+    runtime.spawn(|| {
+        println!("非对称协程 starting (thread 3)");
+        let id = 3;
+        for i in 0..5 {
+            println!("非对称协程: {} counter: {}", id, i);
+            yield_to_caller(); // 只能yield回调用者
+        }
+        println!("非对称协程 finished");
+    });
+
+    // 新增call/resume测试
+    runtime.spawn(|| {
+        println!("call/resume测试 starting (thread 4)");
+        let id = 4;
+        for i in 0..3 {
+            println!("call/resume测试: {} counter: {}", id, i);
+            if i == 1 {
+                println!("准备call thread 3");
+                call_thread(2); // 调用thread 3 (索引从0开始)
+            }
+            yield_thread();
+        }
+        println!("call/resume测试 finished");
     });
 
     runtime.run();
