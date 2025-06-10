@@ -1,4 +1,8 @@
-use std::arch::asm;
+use std::arch::global_asm;
+
+// options(att_syntax) // 这里你可以修改为 raw | att_syntax 语法
+// options(raw)
+global_asm!(include_str!("switch.s"));
 
 const DEFAULT_STACK_SIZE: usize = 1024 * 1024 * 2;
 const MAX_THREADS: usize = 4;
@@ -117,7 +121,10 @@ impl Runtime {
 
         let old: *mut ThreadContext = &mut self.threads[old_pos].ctx;
         let new: *const ThreadContext = &self.threads[pos].ctx;
-        switch(old, new);
+
+        unsafe {
+            switch(old, new);
+        }
 
         self.threads.len() > 0
     }
@@ -133,10 +140,21 @@ impl Runtime {
 
         unsafe {
             let s_ptr = available_thread.stack.as_mut_ptr().offset(size as isize);
-            let s_ptr = (s_ptr as usize & !15) as *mut u8;
-            std::ptr::write(s_ptr.offset(-24) as *mut u64, guard as u64);
-            std::ptr::write(s_ptr.offset(-32) as *mut u64, f as u64);
-            available_thread.ctx.rsp = s_ptr.offset(-32) as u64;
+            let s_aligned = (s_ptr as usize & !15) as *mut u8;
+
+            // std::ptr::write(s_ptr.offset(-24) as *mut u64, guard as u64);
+            std::ptr::write(s_aligned.offset(-8) as *mut u64, guard as u64);
+
+            // std::ptr::write(s_ptr.offset(-32) as *mut u64, f as u64);
+            std::ptr::write(s_aligned.offset(-16) as *mut u64, f as u64);
+
+            // available_thread.ctx.rsp = s_ptr.offset(-32) as u64;
+            available_thread.ctx.rsp = s_aligned.offset(-16) as u64;
+
+            // println!("Thread {} stack setup:", self.threads.len());
+            println!("  Function at: {:p}", f as *const ());
+            println!("  Guard at: {:p}", guard as *const ());
+            println!("  RSP set to: {:p}", s_ptr.offset(-16));
         }
 
         available_thread.state = State::Ready;
@@ -157,31 +175,9 @@ fn yield_thread() {
     }
 }
 
-fn switch(old_ctx: *mut ThreadContext, new_ctx: *const ThreadContext) {
-    unsafe {
-        asm!(
-            "mov [rdi + 0x00], rsp",
-            "mov [rdi + 0x08], r15",
-            "mov [rdi + 0x10], r14",
-            "mov [rdi + 0x18], r13",
-            "mov [rdi + 0x20], r12",
-            "mov [rdi + 0x28], rbx",
-            "mov [rdi + 0x30], rbp",
-            "mov rsp, [rsi + 0x00]",
-            "mov r15, [rsi + 0x08]",
-            "mov r14, [rsi + 0x10]",
-            "mov r13, [rsi + 0x18]",
-            "mov r12, [rsi + 0x20]",
-            "mov rbx, [rsi + 0x28]",
-            "mov rbp, [rsi + 0x30]",
-            "ret",
-            in("rdi") old_ctx,
-            in("rsi") new_ctx
-        );
-    }
+unsafe extern "C" {
+    unsafe fn switch(old_ctx: *mut ThreadContext, new_ctx: *const ThreadContext);
 }
-
-// todo: - add save format
 
 fn main() {
     println!("runtime run.");
