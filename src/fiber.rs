@@ -1,3 +1,4 @@
+#![feature(naked_functions)]
 use std::arch::{asm, naked_asm};
 
 const DEFAULT_STACK_SIZE = 1024 * 1024 * 2;
@@ -101,8 +102,8 @@ impl Runtime {
 
         unsafe {
             let old: *mut ThreadContext = &mut self.threads[old_pos].ctx;
-            let new: *mut ThreadContext = &self.threads[pos].ctx;
-            asm!("call switch, in("rdi") old, in("rsi") new, clobber_abi("C")");
+            let new: *const ThreadContext = &self.threads[pos].ctx;
+            asm!("call switch", in("rdi") old, in("rsi") new, clobber_abi("C")); // call switch
         }
 
         self.threads.len() > 0
@@ -147,6 +148,8 @@ fn yield_thread() {
     }
 }
 
+#[naked]
+#[no_mangle]
 unsafe extern "C" fn switch() {
     naked_asm!(
         "mov [rdi + 0x00], rsp",
