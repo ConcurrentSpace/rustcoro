@@ -1,4 +1,5 @@
 const std = @import("std");
+const play = @import("play.zig");
 
 const STACK_SIZE: usize = 1024; // todo: - use print make it bigger than 48
 
@@ -15,10 +16,12 @@ fn hello() noreturn { // todo: - why can't use callconv(.C)
 
 extern fn gt_switch(new_ctx: *const ThreadContext) void; // todo: - try use naked
 comptime {
-    asm (@embedFile("switch.S"));
+    asm (@embedFile("switch1.s"));
 }
 
 pub fn main() !void {
+    try play.run();
+
     var ctx = ThreadContext{
         .rsp = 0,
     };
