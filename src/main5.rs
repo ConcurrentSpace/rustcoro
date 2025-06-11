@@ -8,16 +8,17 @@ const DEFAULT_STACK_SIZE: usize = 1024 * 1024 * 2;
 const MAX_THREADS: usize = 4;
 static mut RUNTIME: usize = 0;
 
+// 每个寄存器使用固定 8 字节偏移
 #[derive(Debug, Default)]
 #[repr(C)]
 struct ThreadContext {
-    rsp: u64,
-    r15: u64,
-    r14: u64,
-    r13: u64,
-    r12: u64,
-    rbx: u64,
-    rbp: u64,
+    rsp: u64,   // 0x00 Stack Pointer 栈指针寄存器，指向当前栈顶位置，每个协程有自己的栈空间，切换时必须保存/恢复，确保协程恢复后能继续使用自己的栈
+    r15: u64,   // 0x08
+    r14: u64,   // 0x10
+    r13: u64,   // 0x18
+    r12: u64,   // 0x20
+    rbx: u64,   // 0x28 通用寄存器，常用于存储基地址或计算
+    rbp: u64,   // 0x30 Base Pointer 基指针寄存器，用于访问栈帧中的局部变量和参数，维护函数调用栈的结构，在调试和栈回溯中特别重要
 }
 
 #[derive(PartialEq, Eq, Debug)]
