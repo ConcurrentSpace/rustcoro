@@ -151,7 +151,9 @@ pub fn main() !void {
     main_coro = try Coroutine.init(allocator, main);
     action1_coro = try Coroutine.init(allocator, action1);
 
-    action1_coro.begin();
+    action1_coro.resumeFrom(&main_coro); // 这种不能进入 action1
+
+    action1_coro.begin(); // 这种可是进入 action1
 
     std.debug.print("all switch completed\n", .{});
 }
