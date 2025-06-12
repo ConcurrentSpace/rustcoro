@@ -29,17 +29,44 @@ const State = enum {
 const Coroutine = struct {
     const Self = @This();
 
+    allocator: std.mem.Allocator,
+
     stack: []align(16) u8,
-    context: StackContext,
+    context: *StackContext,
     state: State = .start,
 
     // todo: - change this allocator inner
-    // fn init(allocator: std.mem.Allocator, func: anytype) !Self {
-    //     const context = StackContext{};
-    //     const stack = try allocator.alignedAlloc(u8, 16, STACK_SIZE);
+    fn init(allocator: std.mem.Allocator, func_entry: anytype) !Self {
+        const stack = try allocator.alignedAlloc(u8, 16, STACK_SIZE);
 
-    //     return .{};
-    // }
+        const stack_bottom = @intFromPtr(stack.ptr) + STACK_SIZE;
+        const sb_aligned = stack_bottom & ~@as(usize, 15);
+        const rsp = sb_aligned - 16;
+        @as(*u64, @ptrFromInt(rsp)).* = @intFromPtr(&func_entry);
+
+        var context = StackContext{
+            .rsp = rsp,
+        };
+
+        return .{
+            .allocator = allocator,
+            .stack = stack,
+            .context = &context,
+        };
+    }
+
+    fn deinit(self: *Self) void {
+        self.allocator.free(self.stack);
+    }
+
+    fn resumeFrom(self: *Self, coro: *Coroutine) void {
+        switch_ctx(coro.context, self.context);
+    }
+
+    fn begin(self: *Self) void {
+        var main_ctx = StackContext{};
+        switch_ctx(&main_ctx, self.context);
+    }
 };
 
 const Signature = struct {
@@ -99,12 +126,17 @@ fn coroFn(x: *usize) usize {
     return x.* + 10;
 }
 
+var main_coro: Coroutine = undefined;
+var action1_coro: Coroutine = undefined;
+
 fn action1() void {
+    std.debug.print("action begin\n", .{});
     for (0..10) |index| {
         std.debug.print("action1 index = {}\n", .{index});
     }
     std.debug.print("action1 finished\n", .{});
-    switch_ctx(&ctx1, &main_ctx);
+
+    main_coro.resumeFrom(&action1_coro);
 }
 
 fn action2() void {
@@ -113,33 +145,13 @@ fn action2() void {
     }
 }
 
-var main_ctx: StackContext = undefined;
-var ctx1: StackContext = undefined;
-
 pub fn main() !void {
-    // action1();
-    // action1();
+    const allocator = std.heap.page_allocator; // todo: - change this allocator, use debug allocator ?
 
-    const allocator = std.heap.page_allocator;
-    const stack = try allocator.alignedAlloc(u8, 16, STACK_SIZE);
-    defer std.heap.page_allocator.free(stack);
+    main_coro = try Coroutine.init(allocator, main);
+    action1_coro = try Coroutine.init(allocator, action1);
 
-    main_ctx = StackContext{};
-    ctx1 = StackContext{};
-    // var ctx2 = StackContext{};
-
-    const stack_bottom = @intFromPtr(stack.ptr) + STACK_SIZE; // 获取栈底位置
-    const sb_aligned = stack_bottom & ~@as(usize, 15); // 确保16字节对齐
-    // 当CPU执行`call`指令时，会自动将返回地址(8字节)压栈
-    // 预留额外8字节空间以满足对齐要求（16 - 8 = 8）
-    // 总计预留16字节空间
-    const rsp = sb_aligned - 16;
-    @as(*u64, @ptrFromInt(rsp)).* = @intFromPtr(&action1); // 函数指针写入栈
-    ctx1.rsp = rsp; // 写入返回地址
-
-    // 相当于执行 call
-
-    switch_ctx(&main_ctx, &ctx1);
+    action1_coro.begin();
 
     std.debug.print("all switch completed\n", .{});
 }
@@ -181,3 +193,8 @@ test "switch-stack-context" {}
 //     const res = xawait(frame);
 //     try std.testing.expectEqual(res, 12);
 // }
+
+test "normal-func-flow" {
+    action1();
+    action2();
+}
