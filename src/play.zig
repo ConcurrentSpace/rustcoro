@@ -10,13 +10,13 @@ comptime {
 extern fn switch_ctx(old_ctx: *StackContext, new_ctx: *StackContext) void;
 
 const StackContext = struct {
-    rsp: usize = 0,
-    r15: usize = 0,
-    r14: usize = 0,
-    r13: usize = 0,
-    r12: usize = 0,
-    rbx: usize = 0,
-    rbp: usize = 0,
+    rsp: u64 = 0,
+    r15: u64 = 0,
+    r14: u64 = 0,
+    r13: u64 = 0,
+    r12: u64 = 0,
+    rbx: u64 = 0,
+    rbp: u64 = 0,
 };
 
 const State = enum {
@@ -103,12 +103,45 @@ fn action1() void {
     for (0..10) |index| {
         std.debug.print("action1 index = {}\n", .{index});
     }
+    std.debug.print("action1 finished\n", .{});
+    switch_ctx(&ctx1, &main_ctx);
 }
 
 fn action2() void {
     for (0..10) |index| {
         std.debug.print("action2 index = {}\n", .{index});
     }
+}
+
+var main_ctx: StackContext = undefined;
+var ctx1: StackContext = undefined;
+
+pub fn main() !void {
+    // action1();
+    // action1();
+
+    const allocator = std.heap.page_allocator;
+    const stack = try allocator.alignedAlloc(u8, 16, STACK_SIZE);
+    defer std.heap.page_allocator.free(stack);
+
+    main_ctx = StackContext{};
+    ctx1 = StackContext{};
+    // var ctx2 = StackContext{};
+
+    const stack_bottom = @intFromPtr(stack.ptr) + STACK_SIZE; // 获取栈底位置
+    const sb_aligned = stack_bottom & ~@as(usize, 15); // 确保16字节对齐
+    // 当CPU执行`call`指令时，会自动将返回地址(8字节)压栈
+    // 预留额外8字节空间以满足对齐要求（16 - 8 = 8）
+    // 总计预留16字节空间
+    const rsp = sb_aligned - 16;
+    @as(*u64, @ptrFromInt(rsp)).* = @intFromPtr(&action1); // 函数指针写入栈
+    ctx1.rsp = rsp; // 写入返回地址
+
+    // 相当于执行 call
+
+    switch_ctx(&main_ctx, &ctx1);
+
+    std.debug.print("all switch completed\n", .{});
 }
 
 var coroutine1: Coroutine = undefined;
@@ -148,35 +181,3 @@ test "switch-stack-context" {}
 //     const res = xawait(frame);
 //     try std.testing.expectEqual(res, 12);
 // }
-
-pub fn main() !void {
-    // action1();
-    // action1();
-
-    const allocator = std.heap.page_allocator;
-    const stack = try allocator.alignedAlloc(u8, 16, STACK_SIZE);
-    defer std.heap.page_allocator.free(stack);
-
-    var main_ctx = StackContext{};
-    var ctx1 = StackContext{};
-    // var ctx2 = StackContext{};
-
-    // 1. 获取栈底位置
-    const stack_bottom = @intFromPtr(stack.ptr) + STACK_SIZE;
-
-    // 2. 确保16字节对齐
-    const sb_aligned = stack_bottom & ~@as(usize, 15);
-
-    // 3. 预留返回地址空间（16字节）并保持对齐
-    const rsp = sb_aligned - 16;
-
-    // 4. 函数指针写入栈
-    @as(*u64, @ptrFromInt(rsp)).* = @intFromPtr(&action1);
-    // 5. 写入返回地址
-    ctx1.rsp = rsp;
-    // ctx1.rbp = stack_bottom;
-
-    switch_ctx(&main_ctx, &ctx1);
-
-    while (true) {}
-}
