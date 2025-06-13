@@ -138,6 +138,7 @@ pub fn main() !void {
     ctx1.rsp = rsp; // 写入返回地址
 
     // 相当于执行 call
+    // push + jmp
 
     switch_ctx(&main_ctx, &ctx1);
 
