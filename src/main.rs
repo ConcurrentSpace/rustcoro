@@ -182,13 +182,14 @@ impl Runtime {
                 .iter_mut()
                 .find(|t| t.state == State::Available)
                 .expect("no available thread.");
+            available_thread.task = Some(Box::new(f));
 
             let size = available_thread.stack.len();
 
             let s_ptr = available_thread.stack.as_mut_ptr().offset(size as isize);
             let s_aligned = (s_ptr as usize & !15) as *mut u8;
-            available_thread.task = Some(Box::new(f));
-            available_thread.ctx.thread_ptr = available_thread as *const Thread as u64;
+
+            available_thread.ctx.thread_ptr = available_thread as *const Thread as u64; // set thread pointer address
             std::ptr::write(s_aligned.offset(-8) as *mut u64, guard as u64);
             std::ptr::write(s_aligned.offset(-16) as *mut u64, call as u64);
             available_thread.ctx.rsp = s_aligned.offset(-16) as u64;

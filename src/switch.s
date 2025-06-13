@@ -15,5 +15,5 @@ switch:
     movq 0x20(%rsi), %r12   # 恢复r12
     movq 0x28(%rsi), %rbx   # 恢复rbx
     movq 0x30(%rsi), %rbp   # 恢复基指针
-    movq 0x38(%rsi), %rdi   # what
+    movq 0x38(%rsi), %rdi   # thread pointer 设置到第一个参数
     retq                    # 返回(隐含跳转)
