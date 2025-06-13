@@ -76,6 +76,7 @@ var base_coro: Coroutine = undefined;
 var action1_coro: Coroutine = undefined;
 var action2_coro: Coroutine = undefined;
 var use_coro = false;
+var use_ctx = false;
 
 fn action1() void {
     std.debug.print("coro action1 begin\n", .{});
@@ -86,6 +87,9 @@ fn action1() void {
 
     if (use_coro) {
         base_coro.resumeFrom(&action1_coro);
+    }
+    if (use_ctx) {
+        switch_ctx(&action1_ctx, &base_ctx);
     }
 }
 
@@ -108,7 +112,29 @@ test "normal-func-flow" {
     action2();
 }
 
-test "stack-context-swtich" {}
+var base_ctx: StackContext = undefined;
+var action1_ctx: StackContext = undefined;
+
+test "stack-context-swtich" {
+    use_ctx = true;
+
+    const allocator = std.heap.page_allocator;
+    const stack = try allocator.alignedAlloc(u8, 16, STACK_SIZE);
+    defer std.heap.page_allocator.free(stack);
+
+    base_ctx = StackContext{};
+    action1_ctx = StackContext{};
+
+    const stack_bottom = @intFromPtr(stack.ptr) + STACK_SIZE;
+    const sb_aligned = stack_bottom & ~@as(usize, 15);
+    const rsp = sb_aligned - 16;
+    @as(*u64, @ptrFromInt(rsp)).* = @intFromPtr(&action1);
+    action1_ctx.rsp = rsp;
+
+    switch_ctx(&base_ctx, &action1_ctx);
+
+    std.debug.print("all switch completed\n", .{});
+}
 
 test "coroutine-switch-null" {
     use_coro = true;
