@@ -32,27 +32,41 @@ const Coroutine = struct {
     allocator: std.mem.Allocator,
 
     stack: []align(16) u8,
-    context: *StackContext,
+    context: StackContext,
     state: State = .start,
 
     // todo: - change this allocator inner
     fn init(allocator: std.mem.Allocator, func_entry: anytype) !Self {
-        const stack = try allocator.alignedAlloc(u8, 16, STACK_SIZE);
+        const typeinfo = @typeInfo(@TypeOf(func_entry));
+        // std.debug.print("the type info = {any}\n", .{typeinfo});
+        // const is_null = typeinfo == .Null;
 
-        const stack_bottom = @intFromPtr(stack.ptr) + STACK_SIZE;
-        const sb_aligned = stack_bottom & ~@as(usize, 15);
-        const rsp = sb_aligned - 16;
-        @as(*u64, @ptrFromInt(rsp)).* = @intFromPtr(&func_entry);
+        if (typeinfo == .null) {
+            std.debug.print("func entry is null\n", .{});
+            const context = StackContext{};
+            return .{
+                .allocator = allocator,
+                .stack = &[0]u8{},
+                .context = context,
+            };
+        } else {
+            const stack = try allocator.alignedAlloc(u8, 16, STACK_SIZE);
 
-        var context = StackContext{
-            .rsp = rsp,
-        };
+            const stack_bottom = @intFromPtr(stack.ptr) + STACK_SIZE;
+            const sb_aligned = stack_bottom & ~@as(usize, 15);
+            const rsp = sb_aligned - 16;
+            @as(*u64, @ptrFromInt(rsp)).* = @intFromPtr(&func_entry);
 
-        return .{
-            .allocator = allocator,
-            .stack = stack,
-            .context = &context,
-        };
+            const context = StackContext{
+                .rsp = rsp,
+            };
+
+            return .{
+                .allocator = allocator,
+                .stack = stack,
+                .context = context,
+            };
+        }
     }
 
     fn deinit(self: *Self) void {
@@ -60,13 +74,13 @@ const Coroutine = struct {
     }
 
     fn resumeFrom(self: *Self, coro: *Coroutine) void {
-        switch_ctx(coro.context, self.context);
+        switch_ctx(&coro.context, &self.context);
     }
 
-    fn begin(self: *Self) void {
-        var main_ctx = StackContext{};
-        switch_ctx(&main_ctx, self.context);
-    }
+    // fn begin(self: *Self) void {
+    //     var main_ctx = StackContext{};
+    //     switch_ctx(&main_ctx, self.context);
+    // }
 };
 
 const Signature = struct {
@@ -148,12 +162,12 @@ fn action2() void {
 pub fn main() !void {
     const allocator = std.heap.page_allocator; // todo: - change this allocator, use debug allocator ?
 
-    main_coro = try Coroutine.init(allocator, main);
+    main_coro = try Coroutine.init(allocator, null);
     action1_coro = try Coroutine.init(allocator, action1);
 
     action1_coro.resumeFrom(&main_coro); // 这种不能进入 action1
 
-    action1_coro.begin(); // 这种可是进入 action1
+    // action1_coro.begin(); // 这种可是进入 action1
 
     std.debug.print("all switch completed\n", .{});
 }
