@@ -12,13 +12,14 @@ static mut RUNTIME: usize = 0;
 #[derive(Debug, Default)]
 #[repr(C)]
 struct ThreadContext {
-    rsp: u64,   // 0x00 Stack Pointer 栈指针寄存器，指向当前栈顶位置，每个协程有自己的栈空间，切换时必须保存/恢复，确保协程恢复后能继续使用自己的栈
-    r15: u64,   // 0x08
-    r14: u64,   // 0x10
-    r13: u64,   // 0x18
-    r12: u64,   // 0x20
-    rbx: u64,   // 0x28 通用寄存器，常用于存储基地址或计算
-    rbp: u64,   // 0x30 Base Pointer 基指针寄存器，用于访问栈帧中的局部变量和参数，维护函数调用栈的结构，在调试和栈回溯中特别重要
+    rsp: u64, // 0x00 Stack Pointer 栈指针寄存器，指向当前栈顶位置，每个协程有自己的栈空间，切换时必须保存/恢复，确保协程恢复后能继续使用自己的栈
+    r15: u64, // 0x08
+    r14: u64, // 0x10
+    r13: u64, // 0x18
+    r12: u64, // 0x20
+    rbx: u64, // 0x28 通用寄存器，常用于存储基地址或计算
+    rbp: u64, // 0x30 Base Pointer 基指针寄存器，用于访问栈帧中的局部变量和参数，维护函数调用栈的结构，在调试和栈回溯中特别重要
+    thread_ptr: u64,
 }
 
 #[derive(PartialEq, Eq, Debug)]
@@ -29,17 +30,21 @@ enum State {
 }
 
 struct Thread {
+    id: usize,
     stack: Vec<u8>,
     ctx: ThreadContext,
     state: State,
+    task: Option<Box<dyn FnOnce()>>,
 }
 
 impl Thread {
-    fn new() -> Self {
+    fn new(id: usize) -> Self {
         Thread {
+            id,
             stack: vec![0_u8; DEFAULT_STACK_SIZE],
             ctx: ThreadContext::default(),
             state: State::Available,
+            task: None,
         }
     }
 }
@@ -52,13 +57,16 @@ pub struct Runtime {
 impl Runtime {
     fn new() -> Self {
         let base_thread = Thread {
+            id: 0,
             stack: vec![0_u8; DEFAULT_STACK_SIZE],
             ctx: ThreadContext::default(),
             state: State::Running,
+            task: None,
         };
 
         let mut threads = vec![base_thread];
-        let mut avaliable_threads: Vec<Thread> = (1..MAX_THREADS).map(|_| Thread::new()).collect();
+        threads[0].ctx.thread_ptr = &threads[0] as *const Thread as u64;
+        let mut avaliable_threads: Vec<Thread> = (1..MAX_THREADS).map(|i| Thread::new(i)).collect();
         threads.append(&mut avaliable_threads);
 
         // println!("total threads len = {}", threads.len());
@@ -164,12 +172,46 @@ impl Runtime {
 
         available_thread.state = State::Ready;
     }
+
+    fn spawnf<F: FnOnce() + 'static>(f: F) {
+        unsafe {
+            let rt_ptr = RUNTIME as *mut Runtime;
+
+            let available_thread = (*rt_ptr)
+                .threads
+                .iter_mut()
+                .find(|t| t.state == State::Available)
+                .expect("no available thread.");
+
+            let size = available_thread.stack.len();
+
+            let s_ptr = available_thread.stack.as_mut_ptr().offset(size as isize);
+            let s_aligned = (s_ptr as usize & !15) as *mut u8;
+            available_thread.task = Some(Box::new(f));
+            available_thread.ctx.thread_ptr = available_thread as *const Thread as u64;
+            std::ptr::write(s_aligned.offset(-16) as *mut u64, guard as u64);
+            std::ptr::write(s_aligned.offset(-24) as *mut u64, call as u64);
+            available_thread.ctx.rsp = s_aligned.offset(-24) as u64;
+
+            available_thread.state = State::Ready;
+        }
+    }
+}
+
+fn call(thread: u64) {
+    let thread = unsafe { &mut *(thread as *mut Thread) };
+
+    if let Some(f) = thread.task.take() {
+        f();
+    }
 }
 
 fn guard() {
     unsafe {
         let rt_ptr = RUNTIME as *mut Runtime;
-        (*rt_ptr).t_return();
+        let rt = &mut *rt_ptr;
+        println!("thread {} finished", rt.threads[rt.current].id);
+        rt.t_return();
     }
 }
 
@@ -217,7 +259,7 @@ fn main() {
     let mut runtime = Runtime::new();
     runtime.init();
 
-    runtime.spawn(|| {
+    Runtime::spawnf(|| {
         println!("thread 1 starting");
         let id = 1;
         for i in 0..10 {
@@ -227,7 +269,7 @@ fn main() {
         println!("thread 1 finished");
     });
 
-    runtime.spawn(|| {
+    Runtime::spawnf(|| {
         println!("thread 2 starting");
         let id = 2;
         for i in 0..15 {

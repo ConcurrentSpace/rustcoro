@@ -1,5 +1,22 @@
+# .global switch
+# switch:
+#     mov [rdi + 0x00], rsp
+#     mov [rdi + 0x08], r15
+#     mov [rdi + 0x10], r14
+#     mov [rdi + 0x18], r13
+#     mov [rdi + 0x20], r12
+#     mov [rdi + 0x28], rbx
+#     mov [rdi + 0x30], rbp
+#     mov rsp, [rsi + 0x00]
+#     mov r15, [rsi + 0x08]
+#     mov r14, [rsi + 0x10]
+#     mov r13, [rsi + 0x18]
+#     mov r12, [rsi + 0x20]
+#     mov rbx, [rsi + 0x28]
+#     mov rbp, [rsi + 0x30]
+#     ret
+
 .global switch
-.section .text
 switch:
     movq %rsp, 0x00(%rdi)   # 保存当前栈指针
     movq %r15, 0x08(%rdi)   # 保存r15
@@ -15,5 +32,4 @@ switch:
     movq 0x20(%rsi), %r12   # 恢复r12
     movq 0x28(%rsi), %rbx   # 恢复rbx
     movq 0x30(%rsi), %rbp   # 恢复基指针
-    movq 0x38(%rsi), %rdi   # what
     retq                    # 返回(隐含跳转)
