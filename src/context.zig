@@ -76,93 +76,45 @@ var base_coro: Coroutine = undefined;
 var action1_coro: Coroutine = undefined;
 var action2_coro: Coroutine = undefined;
 var use_coro = false;
-var use_ctx = false;
 
 fn action1() void {
-    std.debug.print("coro action1 begin\n", .{});
     for (0..10) |index| {
-        std.debug.print("action1 index = {}\n", .{index});
-    }
-    std.debug.print("coro action1 end\n\n", .{});
-
-    if (use_coro) {
+        std.debug.print("action1 coro = {} start\n", .{index});
         base_coro.resumeFrom(&action1_coro);
-    }
-    if (use_ctx) {
-        switch_ctx(&action1_ctx, &base_ctx);
+        std.debug.print("action1 coro = {} end\n", .{index});
     }
 }
 
 fn action2() void {
-    std.debug.print("coro action2 begin\n", .{});
     for (0..10) |index| {
-        std.debug.print("action2 index = {}\n", .{index});
-    }
-    std.debug.print("coro action2 end\n\n", .{});
-
-    if (use_coro) {
+        std.debug.print("action2 coro = {} start\n", .{index});
         base_coro.resumeFrom(&action2_coro);
+        std.debug.print("action2 coro = {} end\n", .{index});
     }
 }
 
-test "normal-func-flow" {
-    use_coro = false;
-
-    action1();
-    action2();
-}
-
-var base_ctx: StackContext = undefined;
-var action1_ctx: StackContext = undefined;
-
-test "stack-context-swtich" {
-    use_ctx = true;
-
-    const allocator = std.heap.page_allocator;
-    const stack = try allocator.alignedAlloc(u8, 16, STACK_SIZE);
-    defer std.heap.page_allocator.free(stack);
-
-    base_ctx = StackContext{};
-    action1_ctx = StackContext{};
-
-    const stack_bottom = @intFromPtr(stack.ptr) + STACK_SIZE;
-    const sb_aligned = stack_bottom & ~@as(usize, 15);
-    const rsp = sb_aligned - 16;
-    @as(*u64, @ptrFromInt(rsp)).* = @intFromPtr(&action1);
-    action1_ctx.rsp = rsp;
-
-    switch_ctx(&base_ctx, &action1_ctx);
-
-    std.debug.print("all switch completed\n", .{});
-}
-
-test "coroutine-switch-null" {
-    use_coro = true;
-
-    const allocator = std.heap.page_allocator; // todo: - change this allocator, use debug allocator ?
+test "switch-base-coro1-coro2" {
+    // todo: - change this allocator, use debug allocator ? comppare allocator
+    const allocator = std.testing.allocator;
 
     base_coro = try Coroutine.init(allocator, null);
     action1_coro = try Coroutine.init(allocator, action1);
+    action2_coro = try Coroutine.init(allocator, action2);
 
-    action1_coro.resumeFrom(&base_coro);
-
-    std.debug.print("all switch completed\n\n", .{});
-}
-
-test "coroutine-switch" {
-    use_coro = true;
-    try testCoroSwitch();
-}
-
-fn testCoroSwitch() !void {
-    const allocator = std.heap.page_allocator; // todo: - change this allocator, use debug allocator ?
-
-    base_coro = try Coroutine.init(allocator, testCoroSwitch);
-    action1_coro = try Coroutine.init(allocator, action1);
-
-    action1_coro.resumeFrom(&base_coro);
+    for (0..20) |index| {
+        std.debug.print("\ncurrent index = {}\n", .{index});
+        if (index % 2 == 0) {
+            action1_coro.resumeFrom(&base_coro);
+        } else {
+            action2_coro.resumeFrom(&base_coro);
+        }
+    }
 
     std.debug.print("all switch completed\n\n", .{});
+
+    base_coro.deinit();
+    action1_coro.deinit();
+    action2_coro.deinit();
 }
 
 // test "suspend and resume" {
