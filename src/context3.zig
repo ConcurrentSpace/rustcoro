@@ -33,7 +33,6 @@ const Coroutine = struct {
     context: StackContext,
     state: State = .start,
 
-    // todo: - change this allocator inner
     fn init(allocator: std.mem.Allocator, func_entry: anytype) !Self {
         const typeinfo = @typeInfo(@TypeOf(func_entry));
         // std.debug.print("the type info = {any}\n", .{typeinfo});
@@ -118,9 +117,9 @@ var action1_ctx: StackContext = undefined;
 test "stack-context-swtich" {
     use_ctx = true;
 
-    const allocator = std.heap.page_allocator;
+    const allocator = std.testing.allocator;
     const stack = try allocator.alignedAlloc(u8, 16, STACK_SIZE);
-    defer std.heap.page_allocator.free(stack);
+    defer allocator.free(stack);
 
     base_ctx = StackContext{};
     action1_ctx = StackContext{};
@@ -139,7 +138,7 @@ test "stack-context-swtich" {
 test "coroutine-switch-null" {
     use_coro = true;
 
-    const allocator = std.heap.page_allocator; // todo: - change this allocator, use debug allocator ?
+    const allocator = std.testing.allocator;
 
     base_coro = try Coroutine.init(allocator, null);
     action1_coro = try Coroutine.init(allocator, action1);
@@ -147,6 +146,9 @@ test "coroutine-switch-null" {
     action1_coro.resumeFrom(&base_coro);
 
     std.debug.print("all switch completed\n\n", .{});
+
+    base_coro.deinit();
+    action1_coro.deinit();
 }
 
 test "coroutine-switch" {
@@ -155,7 +157,9 @@ test "coroutine-switch" {
 }
 
 fn testCoroSwitch() !void {
-    const allocator = std.heap.page_allocator; // todo: - change this allocator, use debug allocator ?
+    var debug_allocator = std.heap.DebugAllocator(.{}){};
+    const allocator = debug_allocator.allocator();
+    defer _ = debug_allocator.deinit();
 
     base_coro = try Coroutine.init(allocator, testCoroSwitch);
     action1_coro = try Coroutine.init(allocator, action1);
@@ -163,6 +167,20 @@ fn testCoroSwitch() !void {
     action1_coro.resumeFrom(&base_coro);
 
     std.debug.print("all switch completed\n\n", .{});
+
+    base_coro.deinit();
+    action1_coro.deinit();
+}
+
+fn add(a: i32, b: i32) i32 {
+    return a + b;
+}
+
+test add { // new test write method from course.ziglang
+    const a = 10;
+    const b = 20;
+    const res = add(a, b);
+    try std.testing.expectEqual(30, res);
 }
 
 // test "suspend and resume" {
