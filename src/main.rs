@@ -1,4 +1,4 @@
-use std::arch::global_asm;
+use std::arch::{asm, global_asm};
 
 // options(att_syntax) // 这里你可以修改为 raw | att_syntax 语法
 // options(raw)
@@ -105,12 +105,12 @@ impl Runtime {
     fn t_yield(&mut self) -> bool {
         let mut pos = self.current;
 
-        println!("current = {}", self.current);
-        for i in 0..self.threads.len() {
-            let thread = &self.threads[i];
-            println!("the thread at index = {}, state = {:?}", i, thread.state);
-        }
-        println!("");
+        // println!("current = {}", self.current);
+        // for i in 0..self.threads.len() {
+        //     let thread = &self.threads[i];
+        //     println!("the thread at index = {}, state = {:?}", i, thread.state);
+        // }
+        // println!("");
 
         // 找到 ready 的 thread
         while self.threads[pos].state != State::Ready {
@@ -190,9 +190,19 @@ impl Runtime {
             let s_aligned = (s_ptr as usize & !15) as *mut u8;
 
             available_thread.ctx.thread_ptr = available_thread as *const Thread as u64; // set thread pointer address
+
+            // 新栈布局：从高到低
+            // [s_aligned]      : 栈顶（未使用）
+            // s_aligned-8      : guard地址
+            // s_aligned-16     : call地址 ← RSP初始位置
             std::ptr::write(s_aligned.offset(-8) as *mut u64, guard as u64);
             std::ptr::write(s_aligned.offset(-16) as *mut u64, call as u64);
             available_thread.ctx.rsp = s_aligned.offset(-16) as u64;
+
+            // std::ptr::write(s_aligned.offset(-16) as *mut u64, guard as u64);
+            // std::ptr::write(s_aligned.offset(-24) as *mut u64, skip as u64); // skip 函数需要开启 naked
+            // std::ptr::write(s_aligned.offset(-32) as *mut u64, call as u64);
+            // available_thread.ctx.rsp = s_aligned.offset(-32) as u64;
 
             available_thread.state = State::Ready;
         }
@@ -206,6 +216,15 @@ fn call(thread: u64) {
         f();
     }
 }
+
+// prologue
+// epilogue
+// #[naked]
+// fn skip() {
+//     unsafe {
+//         asm!("ret");
+//     }
+// }
 
 fn guard() {
     unsafe {
@@ -260,24 +279,36 @@ fn main() {
     let mut runtime = Runtime::new();
     runtime.init();
 
-    Runtime::spawnf(|| {
-        println!("thread 1 starting");
-        let id = 1;
-        for i in 0..10 {
-            println!("thread: {} counter: {}", id, i);
-            yield_thread();
-        }
-        println!("thread 1 finished");
-    });
+    // Runtime::spawnf(|| {
+    //     println!("thread 1 starting");
+    //     let id = 1;
+    //     for i in 0..10 {
+    //         println!("thread: {} counter: {}", id, i);
+    //         yield_thread();
+    //     }
+    //     println!("thread 1 finished");
+    // });
+
+    // Runtime::spawnf(|| {
+    //     println!("thread 2 starting");
+    //     let id = 2;
+    //     for i in 0..15 {
+    //         println!("thread: {} counter: {}", id, i);
+    //         yield_thread();
+    //     }
+    //     println!("thread 2 finished");
+    // });
 
     Runtime::spawnf(|| {
-        println!("thread 2 starting");
-        let id = 2;
-        for i in 0..15 {
-            println!("thread: {} counter: {}", id, i);
-            yield_thread();
-        }
-        println!("thread 2 finished");
+        println!("I haven't implemented a timer in this example.");
+        yield_thread();
+        println!("Finally, notice how the tasks are executed concurrently.");
+    });
+    Runtime::spawnf(|| {
+        println!("But we can still nest tasks...");
+        Runtime::spawnf(|| {
+            println!("...like this!");
+        });
     });
 
     runtime.run();
