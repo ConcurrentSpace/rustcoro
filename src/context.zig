@@ -33,7 +33,6 @@ const Coroutine = struct {
     context: StackContext,
     state: State = .start,
 
-    // todo: - change this allocator inner
     fn init(allocator: std.mem.Allocator, func_entry: anytype) !Self {
         const typeinfo = @typeInfo(@TypeOf(func_entry));
         // std.debug.print("the type info = {any}\n", .{typeinfo});
@@ -94,7 +93,6 @@ fn action2() void {
 }
 
 test "switch-base-coro1-coro2" {
-    // todo: - change this allocator, use debug allocator ? comppare allocator
     const allocator = std.testing.allocator;
 
     base_coro = try Coroutine.init(allocator, null);
