@@ -76,54 +76,67 @@ const Coroutine = struct {
     }
 };
 
-var main_coro: Coroutine = undefined;
+var base_coro: Coroutine = undefined;
 var action1_coro: Coroutine = undefined;
+var action2_coro: Coroutine = undefined;
+var use_coro = false;
 
 fn action1() void {
-    std.debug.print("action begin\n", .{});
+    std.debug.print("coro action1 begin\n", .{});
     for (0..10) |index| {
         std.debug.print("action1 index = {}\n", .{index});
     }
-    std.debug.print("action1 finished\n", .{});
+    std.debug.print("coro action1 end\n\n", .{});
 
-    main_coro.resumeFrom(&action1_coro);
-}
-
-fn action2() void {
-    for (0..10) |index| {
-        std.debug.print("action2 index = {}\n", .{index});
+    if (use_coro) {
+        base_coro.resumeFrom(&action1_coro);
     }
 }
 
-// test "normal-func-flow" {
-//     action1();
-//     action2();
-// }
+fn action2() void {
+    std.debug.print("coro action2 begin\n", .{});
+    for (0..10) |index| {
+        std.debug.print("action2 index = {}\n", .{index});
+    }
+    std.debug.print("coro action2 end\n\n", .{});
+
+    if (use_coro) {
+        base_coro.resumeFrom(&action2_coro);
+    }
+}
+
+test "normal-func-flow" {
+    action1();
+    action2();
+}
 
 test "stack-context-swtich" {}
 
 test "coroutine-switch-null" {
+    use_coro = true;
+
     const allocator = std.heap.page_allocator; // todo: - change this allocator, use debug allocator ?
 
-    main_coro = try Coroutine.init(allocator, null);
+    base_coro = try Coroutine.init(allocator, null);
     action1_coro = try Coroutine.init(allocator, action1);
 
-    action1_coro.resumeFrom(&main_coro);
+    action1_coro.resumeFrom(&base_coro);
 
     std.debug.print("all switch completed\n\n", .{});
 }
 
 test "coroutine-switch" {
+    use_coro = true;
     try testCoroSwitch();
 }
 
 fn testCoroSwitch() !void {
     const allocator = std.heap.page_allocator; // todo: - change this allocator, use debug allocator ?
 
-    main_coro = try Coroutine.init(allocator, testCoroSwitch);
+    base_coro = try Coroutine.init(allocator, testCoroSwitch);
     action1_coro = try Coroutine.init(allocator, action1);
 
-    action1_coro.resumeFrom(&main_coro);
+    action1_coro.resumeFrom(&base_coro);
 
     std.debug.print("all switch completed\n\n", .{});
 }
