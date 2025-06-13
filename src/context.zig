@@ -35,11 +35,9 @@ const Coroutine = struct {
 
     fn init(allocator: std.mem.Allocator, func_entry: anytype) !Self {
         const typeinfo = @typeInfo(@TypeOf(func_entry));
-        // std.debug.print("the type info = {any}\n", .{typeinfo});
-        // const is_null = typeinfo == .Null;
 
         if (typeinfo == .null) {
-            std.debug.print("func entry is null\n", .{});
+            // std.debug.print("func entry is null\n", .{});
             const context = StackContext{};
             return .{
                 .context = context,
@@ -50,7 +48,7 @@ const Coroutine = struct {
             const stack_bottom = @intFromPtr(stack.ptr) + STACK_SIZE;
             const sb_aligned = stack_bottom & ~@as(usize, 15);
             const rsp = sb_aligned - 16;
-            @as(*u64, @ptrFromInt(rsp)).* = @intFromPtr(&func_entry);
+            @as(*u64, @ptrFromInt(rsp)).* = @intFromPtr(&func_entry); // todo: - need check func validate
 
             const context = StackContext{ .rsp = rsp };
 
@@ -72,47 +70,47 @@ const Coroutine = struct {
 };
 
 var base_coro: Coroutine = undefined;
-var action1_coro: Coroutine = undefined;
-var action2_coro: Coroutine = undefined;
-var use_coro = false;
+var count_coro: Coroutine = undefined;
+var count: i32 = 1;
 
-fn action1() void {
-    for (0..10) |index| {
-        std.debug.print("action1 coro = {} start\n", .{index});
-        base_coro.resumeFrom(&action1_coro);
-        std.debug.print("action1 coro = {} end\n", .{index});
-    }
+fn addCount() void {
+    std.debug.print("add count comes in \n", .{});
+    count += 1;
+
+    base_coro.resumeFrom(&count_coro);
+
+    count += 1;
+
+    base_coro.resumeFrom(&count_coro);
+
+    count += 1;
+
+    base_coro.resumeFrom(&count_coro);
 }
 
-fn action2() void {
-    for (0..10) |index| {
-        std.debug.print("action2 coro = {} start\n", .{index});
-        base_coro.resumeFrom(&action2_coro);
-        std.debug.print("action2 coro = {} end\n", .{index});
-    }
-}
-
-test "switch-base-coro1-coro2" {
+test "simple counter suspend and resume coroutine" {
     const allocator = std.testing.allocator;
 
     base_coro = try Coroutine.init(allocator, null);
-    action1_coro = try Coroutine.init(allocator, action1);
-    action2_coro = try Coroutine.init(allocator, action2);
+    defer base_coro.deinit();
+    count_coro = try Coroutine.init(allocator, addCount);
+    defer count_coro.deinit();
 
-    for (0..20) |index| {
-        std.debug.print("\ncurrent index = {}\n", .{index});
-        if (index % 2 == 0) {
-            action1_coro.resumeFrom(&base_coro);
-        } else {
-            action2_coro.resumeFrom(&base_coro);
-        }
-    }
+    try std.testing.expect(1 == count);
 
-    std.debug.print("all switch completed\n\n", .{});
+    count_coro.resumeFrom(&base_coro);
 
-    base_coro.deinit();
-    action1_coro.deinit();
-    action2_coro.deinit();
+    try std.testing.expect(2 == count);
+
+    count_coro.resumeFrom(&base_coro);
+
+    try std.testing.expect(3 == count);
+
+    count_coro.resumeFrom(&base_coro);
+
+    try std.testing.expect(4 == count);
+
+    std.debug.print("all finished\n", .{});
 }
 
 // test "suspend and resume" {
