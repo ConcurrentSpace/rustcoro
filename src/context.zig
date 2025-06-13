@@ -27,9 +27,9 @@ const State = enum {
 const Coroutine = struct {
     const Self = @This();
 
-    allocator: std.mem.Allocator,
+    allocator: std.mem.Allocator = undefined,
 
-    stack: []align(16) u8,
+    stack: []align(16) u8 = undefined,
     context: StackContext,
     state: State = .start,
 
@@ -43,8 +43,6 @@ const Coroutine = struct {
             std.debug.print("func entry is null\n", .{});
             const context = StackContext{};
             return .{
-                .allocator = allocator,
-                .stack = &[0]u8{},
                 .context = context,
             };
         } else {
@@ -55,9 +53,7 @@ const Coroutine = struct {
             const rsp = sb_aligned - 16;
             @as(*u64, @ptrFromInt(rsp)).* = @intFromPtr(&func_entry);
 
-            const context = StackContext{
-                .rsp = rsp,
-            };
+            const context = StackContext{ .rsp = rsp };
 
             return .{
                 .allocator = allocator,
@@ -106,6 +102,8 @@ fn action2() void {
 }
 
 test "normal-func-flow" {
+    use_coro = false;
+
     action1();
     action2();
 }
