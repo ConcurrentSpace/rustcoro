@@ -189,9 +189,9 @@ impl Runtime {
             let s_aligned = (s_ptr as usize & !15) as *mut u8;
             available_thread.task = Some(Box::new(f));
             available_thread.ctx.thread_ptr = available_thread as *const Thread as u64;
-            std::ptr::write(s_aligned.offset(-16) as *mut u64, guard as u64);
-            std::ptr::write(s_aligned.offset(-24) as *mut u64, call as u64);
-            available_thread.ctx.rsp = s_aligned.offset(-24) as u64;
+            std::ptr::write(s_aligned.offset(-8) as *mut u64, guard as u64);
+            std::ptr::write(s_aligned.offset(-16) as *mut u64, call as u64);
+            available_thread.ctx.rsp = s_aligned.offset(-16) as u64;
 
             available_thread.state = State::Ready;
         }
