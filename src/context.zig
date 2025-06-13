@@ -1,7 +1,5 @@
 const std = @import("std");
 
-// Frame -> Signature & Coroutine -> StackContext
-
 const STACK_SIZE = 1024 * 1024 * 2;
 
 comptime {
@@ -76,12 +74,73 @@ const Coroutine = struct {
     fn resumeFrom(self: *Self, coro: *Coroutine) void {
         switch_ctx(&coro.context, &self.context);
     }
-
-    // fn begin(self: *Self) void {
-    //     var main_ctx = StackContext{};
-    //     switch_ctx(&main_ctx, self.context);
-    // }
 };
+
+var main_coro: Coroutine = undefined;
+var action1_coro: Coroutine = undefined;
+
+fn action1() void {
+    std.debug.print("action begin\n", .{});
+    for (0..10) |index| {
+        std.debug.print("action1 index = {}\n", .{index});
+    }
+    std.debug.print("action1 finished\n", .{});
+
+    main_coro.resumeFrom(&action1_coro);
+}
+
+fn action2() void {
+    for (0..10) |index| {
+        std.debug.print("action2 index = {}\n", .{index});
+    }
+}
+
+// test "normal-func-flow" {
+//     action1();
+//     action2();
+// }
+
+test "stack-context-swtich" {}
+
+test "coroutine-switch-null" {
+    const allocator = std.heap.page_allocator; // todo: - change this allocator, use debug allocator ?
+
+    main_coro = try Coroutine.init(allocator, null);
+    action1_coro = try Coroutine.init(allocator, action1);
+
+    action1_coro.resumeFrom(&main_coro);
+
+    std.debug.print("all switch completed\n\n", .{});
+}
+
+test "coroutine-switch" {
+    try testCoroSwitch();
+}
+
+fn testCoroSwitch() !void {
+    const allocator = std.heap.page_allocator; // todo: - change this allocator, use debug allocator ?
+
+    main_coro = try Coroutine.init(allocator, testCoroSwitch);
+    action1_coro = try Coroutine.init(allocator, action1);
+
+    action1_coro.resumeFrom(&main_coro);
+
+    std.debug.print("all switch completed\n\n", .{});
+}
+
+// test "suspend and resume" {
+//     var x: usize = 0;
+
+//     const a = coroFn;
+
+//     const frame = xasync(coroFn, .{&x});
+//     try std.testing.expectEqual(x, 2);
+
+//     const res = xawait(frame);
+//     try std.testing.expectEqual(res, 12);
+// }
+
+// Frame -> Signature & Coroutine -> StackContext
 
 const Signature = struct {
     const Self = @This();
@@ -140,38 +199,6 @@ fn coroFn(x: *usize) usize {
     return x.* + 10;
 }
 
-var main_coro: Coroutine = undefined;
-var action1_coro: Coroutine = undefined;
-
-fn action1() void {
-    std.debug.print("action begin\n", .{});
-    for (0..10) |index| {
-        std.debug.print("action1 index = {}\n", .{index});
-    }
-    std.debug.print("action1 finished\n", .{});
-
-    main_coro.resumeFrom(&action1_coro);
-}
-
-fn action2() void {
-    for (0..10) |index| {
-        std.debug.print("action2 index = {}\n", .{index});
-    }
-}
-
-pub fn main() !void {
-    const allocator = std.heap.page_allocator; // todo: - change this allocator, use debug allocator ?
-
-    main_coro = try Coroutine.init(allocator, null);
-    action1_coro = try Coroutine.init(allocator, action1);
-
-    action1_coro.resumeFrom(&main_coro); // 这种不能进入 action1
-
-    // action1_coro.begin(); // 这种可是进入 action1
-
-    std.debug.print("all switch completed\n", .{});
-}
-
 var coroutine1: Coroutine = undefined;
 var coroutine2: Coroutine = undefined;
 
@@ -194,23 +221,4 @@ fn init_ctx(ctx: *StackContext, func_entry: anytype) !void {
 
     // 5. 写入返回地址
     ctx.rsp = rsp;
-}
-
-test "switch-stack-context" {}
-
-// test "suspend and resume" {
-//     var x: usize = 0;
-
-//     const a = coroFn;
-
-//     const frame = xasync(coroFn, .{&x});
-//     try std.testing.expectEqual(x, 2);
-
-//     const res = xawait(frame);
-//     try std.testing.expectEqual(res, 12);
-// }
-
-test "normal-func-flow" {
-    action1();
-    action2();
 }
