@@ -98,7 +98,7 @@ impl Runtime {
     fn t_yield(&mut self) -> bool {
         let mut pos = self.current;
 
-        println!("current = {}", self.current);
+        println!("\ncurrent = {}", self.current);
         for i in 0..self.threads.len() {
             let thread = &self.threads[i];
             println!("the thread at index = {}, state = {:?}", i, thread.state);
